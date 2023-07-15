@@ -1,3 +1,4 @@
+#if 0
 // Functions for setting and getting environment variables.
 #include "config.h"  // IWYU pragma: keep
 
@@ -148,11 +149,69 @@ void misc_init() {
     }
 }
 
+<<<<<<< HEAD
+||||||| parent of cd29cad71 ([riir-parser] wip)
+/// Make sure the PATH variable contains something.
+static void setup_path() {
+    auto &vars = env_stack_t::globals();
+    const auto path = vars.get_unless_empty(L"PATH");
+    if (!path) {
+#if defined(_CS_PATH)
+        // _CS_PATH: colon-separated paths to find POSIX utilities
+        std::string cspath;
+        cspath.resize(confstr(_CS_PATH, nullptr, 0));
+        if (cspath.length() > 0) {
+            confstr(_CS_PATH, &cspath[0], cspath.length());
+            // remove the trailing null-terminator
+            cspath.resize(cspath.length() - 1);
+        }
+#else
+        std::string cspath = "/usr/bin:/bin";  // I doubt this is even necessary
+#endif
+        vars.set_one(L"PATH", ENV_GLOBAL | ENV_EXPORT, str2wcstring(cspath));
+    }
+}
+
+=======
+/// Make sure the PATH variable contains something.
+static void setup_path() {
+    auto &vars = env_stack_globals();
+    const auto path = vars.get_unless_empty(L"PATH");
+    if (!path) {
+#if defined(_CS_PATH)
+        // _CS_PATH: colon-separated paths to find POSIX utilities
+        std::string cspath;
+        cspath.resize(confstr(_CS_PATH, nullptr, 0));
+        if (cspath.length() > 0) {
+            confstr(_CS_PATH, &cspath[0], cspath.length());
+            // remove the trailing null-terminator
+            cspath.resize(cspath.length() - 1);
+        }
+#else
+        std::string cspath = "/usr/bin:/bin";  // I doubt this is even necessary
+#endif
+        vars.set_one(L"PATH", ENV_GLOBAL | ENV_EXPORT, str2wcstring(cspath));
+    }
+}
+
+>>>>>>> cd29cad71 ([riir-parser] wip)
 static std::map<wcstring, wcstring> inheriteds;
 
 const std::map<wcstring, wcstring> &env_get_inherited() { return inheriteds; }
 
+<<<<<<< HEAD
 void set_inheriteds_ffi() {
+||||||| parent of cd29cad71 ([riir-parser] wip)
+void env_init(const struct config_paths_t *paths, bool do_uvars, bool default_paths) {
+    env_stack_t &vars = env_stack_t::principal();
+    // Import environment variables. Walk backwards so that the first one out of any duplicates wins
+    // (See issue #2784).
+=======
+void env_init(const struct config_paths_t *paths, bool do_uvars, bool default_paths) {
+    env_stack_t &vars = env_stack_principal();
+    // Import environment variables. Walk backwards so that the first one out of any duplicates wins
+    // (See issue #2784).
+>>>>>>> cd29cad71 ([riir-parser] wip)
     wcstring key, val;
     const char *const *envp = environ;
     int i = 0;
@@ -405,3 +464,4 @@ void event_list_ffi_t::push(void *event_vp) {
     assert(event && "Null event");
     events.push_back(rust::Box<Event>::from_raw(event));
 }
+#endif

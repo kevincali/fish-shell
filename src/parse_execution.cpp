@@ -20,7 +20,6 @@
 
 #include "ast.h"
 #include "builtin.h"
-#include "builtins/function.rs.h"
 #include "common.h"
 #include "complete.h"
 #include "env.h"
