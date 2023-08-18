@@ -495,23 +495,17 @@ fn setup_user(vars: &EnvStack) {
 
 /// Make sure the PATH variable contains something.
 fn setup_path() {
-    // confstr is only availble in Rust libc on macOS so far
-    // it is defined in <unistd.h>
-    // it is a POSIX API, all relevant platforms _should_ support it
-    extern "C" {
-        fn confstr(name: libc::c_int, buf: *mut libc::c_char, len: libc::size_t) -> libc::size_t;
-    }
-    const _CS_PATH: libc::c_int = 1;
+    use crate::compat::{confstr, _CS_PATH};
 
     let vars = &GLOBALS;
     let path = vars.get_unless_empty(L!("PATH"));
     if path.is_none() {
         // _CS_PATH: colon-separated paths to find POSIX utilities
 
-        let buf_size = unsafe { confstr(_CS_PATH, std::ptr::null_mut(), 0) };
+        let buf_size = unsafe { confstr(_CS_PATH(), std::ptr::null_mut(), 0) };
         let path = if buf_size > 0 {
             let mut buf = vec![b'\0' as libc::c_char; buf_size];
-            unsafe { confstr(_CS_PATH, buf.as_mut_ptr(), buf_size) };
+            unsafe { confstr(_CS_PATH(), buf.as_mut_ptr(), buf_size) };
             let buf = buf;
             // safety: buf should contain a null-byte, and is not mutable unless we move ownership
             let cstr = unsafe { CStr::from_ptr(buf.as_ptr()) };
