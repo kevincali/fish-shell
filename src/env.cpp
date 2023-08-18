@@ -208,30 +208,28 @@ void misc_init() {
     }
 }
 
-/// Make sure the PATH variable contains something.
-static void setup_path() {
-    auto &vars = env_stack_t::globals();
-    const auto path = vars.get_unless_empty(L"PATH");
-    if (!path) {
-#if defined(_CS_PATH)
-        // _CS_PATH: colon-separated paths to find POSIX utilities
-        std::string cspath;
-        cspath.resize(confstr(_CS_PATH, nullptr, 0));
-        if (cspath.length() > 0) {
-            confstr(_CS_PATH, &cspath[0], cspath.length());
-            // remove the trailing null-terminator
-            cspath.resize(cspath.length() - 1);
-        }
-#else
-        std::string cspath = "/usr/bin:/bin";  // I doubt this is even necessary
-#endif
-        vars.set_one(L"PATH", ENV_GLOBAL | ENV_EXPORT, str2wcstring(cspath));
-    }
-}
-
 static std::map<wcstring, wcstring> inheriteds;
 
 const std::map<wcstring, wcstring> &env_get_inherited() { return inheriteds; }
+
+void set_inheriteds_ffi() {
+    wcstring key, val;
+    const char *const *envp = environ;
+    int i = 0;
+    while (envp && envp[i]) i++;
+    while (i--) {
+        const wcstring key_and_val = str2wcstring(envp[i]);
+        size_t eql = key_and_val.find(L'=');
+        if (eql == wcstring::npos) {
+            // PORTING: Should this not be key_and_val?
+            inheriteds[key] = L"";
+        } else {
+            key.assign(key_and_val, 0, eql);
+            val.assign(key_and_val, eql + 1, wcstring::npos);
+            inheriteds[key] = val;
+        }
+    }
+}
 
 void env_init(const struct config_paths_t *paths, bool do_uvars, bool default_paths) {
     env_stack_t &vars = env_stack_t::principal();
