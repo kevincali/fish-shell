@@ -50,7 +50,6 @@ use crate::{
 use std::env;
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::File;
-use std::io;
 use std::mem::MaybeUninit;
 use std::os::unix::prelude::*;
 use std::path::{Path, PathBuf};
@@ -61,28 +60,29 @@ use std::sync::Arc;
 // See: https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-crates
 // for reference
 const PACKAGE_NAME: &str = "fish"; // env!("CARGO_PKG_NAME");
+                                   // FIXME: the following should just use env!(), this is to make `cargo test` work without CMake for now
 const DOC_DIR: &str = {
     match option_env!("DOCDIR") {
         Some(e) => e,
-        None => "share/doc/fish",
+        None => "(unused)",
     }
 };
 const DATA_DIR: &str = {
     match option_env!("DATADIR") {
         Some(e) => e,
-        None => "share",
+        None => "(unused)",
     }
 };
 const SYSCONF_DIR: &str = {
     match option_env!("SYSCONFDIR") {
         Some(e) => e,
-        None => "/etc",
+        None => "(unused)",
     }
 };
 const BIN_DIR: &str = {
     match option_env!("BINDIR") {
         Some(e) => e,
-        None => "bin",
+        None => "(unused)",
     }
 };
 
@@ -129,15 +129,15 @@ fn tv_to_msec(tv: &libc::timeval) -> i64 {
     msec
 }
 
-fn print_rusage_self(mut dest: impl io::Write) {
-    let mut rs = MaybeUninit::zeroed();
+fn print_rusage_self() {
+    let mut rs = MaybeUninit::uninit();
     if unsafe { libc::getrusage(libc::RUSAGE_SELF, rs.as_mut_ptr()) } != 0 {
         let s = CString::new("getrusage").unwrap();
         unsafe { libc::perror(s.as_ptr()) }
         return;
     }
     let rs: libc::rusage = unsafe { rs.assume_init() };
-    let rss_kb = if cfg!(target_vendor = "apple") {
+    let rss_kb = if cfg!(target_os = "apple") {
         // mac use bytes.
         rs.ru_maxrss / 1024
     } else {
@@ -145,29 +145,30 @@ fn print_rusage_self(mut dest: impl io::Write) {
         rs.ru_maxrss
     };
 
-    let _ = writeln!(dest, "  rusage self:");
-    let _ = writeln!(dest, "      user time: {} ms", tv_to_msec(&rs.ru_utime));
-    let _ = writeln!(dest, "       sys time: {} ms", tv_to_msec(&rs.ru_stime));
-    let _ = writeln!(
-        dest,
-        "     total time: {} ms",
-        tv_to_msec(&rs.ru_utime) + tv_to_msec(&rs.ru_stime)
-    );
-    let _ = writeln!(dest, "        max rss: {} kb", rss_kb);
-    let _ = writeln!(dest, "        signals: {}", rs.ru_nsignals);
+    let user_time = tv_to_msec(&rs.ru_utime);
+    let sys_time = tv_to_msec(&rs.ru_stime);
+    let total_time = user_time + sys_time;
+    let signals = rs.ru_nsignals;
+
+    eprintln!("  rusage self:");
+    eprintln!("      user time: {sys_time} ms");
+    eprintln!("       sys time: {user_time} ms");
+    eprintln!("     total time: {total_time} ms");
+    eprintln!("        max rss: {rss_kb} kb");
+    eprintln!("        signals: {signals}");
 }
 
-fn determine_config_directory_paths(argv0: &wstr) -> ConfigPaths {
+fn determine_config_directory_paths(argv0: impl AsRef<Path>) -> ConfigPaths {
     // PORTING: why is this not just an associated method on ConfigPaths?
 
     let mut paths = ConfigPaths::default();
     let mut done = false;
     // FIXME: osstr
-    let exec_path = get_executable_path(&argv0.to_string());
+    let exec_path = get_executable_path(argv0.as_ref());
     if let Ok(exec_path) = exec_path.canonicalize() {
         FLOG!(
             config,
-            format!("exec_path: {:?}, argv[0]: {:?}", exec_path, argv0)
+            format!("exec_path: {:?}, argv[0]: {:?}", exec_path, argv0.as_ref())
         );
         // TODO: we should determine program_name from argv0 somewhere in this file
 
@@ -207,23 +208,14 @@ fn determine_config_directory_paths(argv0: &wstr) -> ConfigPaths {
             if let Some(suffix) = suffix {
                 let seems_installed = suffix == installed_suffix;
 
-                let base_path: PathBuf = {
-                    // overly elaborate way to strip the suffix from base_path
-                    let mut remaining_suffix = suffix;
-                    let mut base = exec_path;
-                    while let Some(suffix) = remaining_suffix.parent() {
-                        base.pop();
-                        remaining_suffix = suffix;
-                    }
-                    // remove whatever remains in remaining_suffix
-                    base.pop();
-                    base
-                };
+                let mut base_path = exec_path;
+                base_path.shrink_to(base_path.as_os_str().len() - suffix.as_os_str().len());
+                let base_path = base_path;
 
                 paths = if seems_installed {
                     ConfigPaths {
                         data: base_path.join("share/fish"),
-                        sysconf: base_path.join("etc"),
+                        sysconf: base_path.join("etc/fish"),
                         doc: base_path.join("share/doc/fish"),
                         bin: base_path.join("bin"),
                     }
@@ -262,10 +254,10 @@ fn determine_config_directory_paths(argv0: &wstr) -> ConfigPaths {
         config,
         "determine_config_directory_paths() results:\npaths.data: %ls\npaths.sysconf: \
         %ls\npaths.doc: %ls\npaths.bin: %ls",
-            paths.data.display().to_string(),
-            paths.sysconf.display().to_string(),
-            paths.doc.display().to_string(),
-            paths.bin.display().to_string()
+        paths.data.display().to_string(),
+        paths.sysconf.display().to_string(),
+        paths.doc.display().to_string(),
+        paths.bin.display().to_string()
     );
 
     paths
@@ -290,7 +282,7 @@ fn source_config_in_directory(parser: &mut ffi::parser_t, dir: &wstr) {
         );
         return;
     }
-    FLOGF!(config, "sourcing", escaped_pathname);
+    FLOG!(config, "sourcing", escaped_pathname);
 
     let cmd: WString = L!("builtin source ").to_owned() + escaped_pathname.as_utfstr();
 
@@ -453,6 +445,8 @@ fn fish_parse_opt(args: &mut [&wstr], opts: &mut FishCmdOpts) -> usize {
                 }
                 std::process::exit(0);
             }
+            // "--profile" - this does not activate profiling right away,
+            // rather it's done after startup is finished.
             'p' => opts.profile_output = Some(OsString::from_vec(wcs2string(w.woptarg.unwrap()))),
             PROFILE_STARTUP_ARG => {
                 // With "--profile-startup" we immediately turn profiling on.
@@ -648,14 +642,17 @@ fn main() -> i32 {
     let mut paths: Option<ConfigPaths> = None;
     // If we're not executing, there's no need to find the config.
     if !opts.no_exec {
-        paths = Some(determine_config_directory_paths(args[0]));
+        // PORTING: C++ had not converted, we must revert
+        paths = Some(determine_config_directory_paths(OsString::from_vec(
+            wcs2string(args[0]),
+        )));
         env_init(paths.as_ref(), !opts.no_config, opts.no_config);
     }
 
     // Set features early in case other initialization depends on them.
     // Start with the ones set in the environment, then those set on the command line (so the
     // command line takes precedence).
-    if let Some(features_var) = EnvStack::globals().getf(L!("fish_features"), EnvMode::default()) {
+    if let Some(features_var) = EnvStack::globals().get(L!("fish_features")) {
         for s in features_var.as_list() {
             features::set_from_string(s.as_utfstr());
         }
@@ -750,7 +747,7 @@ fn main() -> i32 {
         my_optind += 1;
         // Rust sets cloexec by default, see above
         // We don't need autoclose_fd_t when we use File, it will be closed on drop.
-        match File::options().read(true).open(path) {
+        match File::open(path) {
             Err(e) => {
                 FLOGF!(
                     error,
@@ -813,7 +810,7 @@ fn main() -> i32 {
 
     ffi::history_save_all();
     if opts.print_rusage_self {
-        print_rusage_self(std::io::stderr());
+        print_rusage_self();
     }
 
     if !debug_output.is_null() {
