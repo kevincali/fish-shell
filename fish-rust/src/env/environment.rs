@@ -630,8 +630,7 @@ pub fn env_init(paths: Option<&ConfigPaths>, do_uvars: bool, default_paths: bool
     vars.set_one(L!("CMD_DURATION"), EnvMode::UNEXPORT, "0".into());
 
     // Set up the version variable.
-    let v = unsafe { CStr::from_ptr(ffi::get_fish_version()) };
-    let version = str2wcstring(v.to_bytes());
+    let version: WString = crate::BUILD_VERSION.into();
     vars.set_one(L!("version"), EnvMode::GLOBAL, version.clone());
     vars.set_one(L!("FISH_VERSION"), EnvMode::GLOBAL, version);
 

@@ -10,6 +10,8 @@
 #![allow(clippy::ptr_arg)]
 #![allow(clippy::field_reassign_with_default)]
 
+pub const BUILD_VERSION: &str = env!("FISH_BUILD_VERSION");
+
 #[macro_use]
 mod common;
 

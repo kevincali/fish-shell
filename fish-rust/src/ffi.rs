@@ -61,7 +61,6 @@ include_cpp! {
     generate!("set_inheriteds_ffi")
 
     generate!("init_input")
-    generate!("get_fish_version")
 
     generate_pod!("pipes_ffi_t")
     generate!("environment_t")

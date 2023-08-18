@@ -1,8 +1,11 @@
 use rsconf::{LinkType, Target};
 use std::env;
 use std::error::Error;
+use std::path::PathBuf;
 
 fn main() {
+    println!("cargo:rustc-env=FISH_BUILD_VERSION={}", find_version());
+
     for key in ["DOCDIR", "DATADIR", "SYSCONFDIR", "BINDIR"] {
         if let Ok(val) = env::var(key) {
             // Forward some CMake config
@@ -112,6 +115,21 @@ fn main() {
         .flag("-Wno-comment")
         .compile("fish-rust-autocxx");
     rsconf::rebuild_if_paths_changed(&source_files);
+}
+
+fn find_version() -> String {
+    const DEFAULT: &str = "unknown";
+    let base_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let version_file = base_dir.join("version");
+
+    if version_file.exists() {
+        // First see if there is a version file (included in release tarballs),
+        std::fs::read_to_string(version_file).unwrap_or(DEFAULT.into())
+    } else {
+        // then try git-describe
+        git_version::git_version!(args = ["--always", "--dirty=-dirty"], fallback = DEFAULT)
+            .to_owned()
+    }
 }
 
 /// Dynamically enables certain features at build-time, without their having to be explicitly
